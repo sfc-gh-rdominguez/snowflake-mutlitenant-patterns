@@ -1,8 +1,18 @@
 import { Elysia } from "elysia";
-import clients from "./clients.json";
 
 const KEYCLOAK = process.env.KEYCLOAK_URL!;
 const REALM = "tenants";
+const CLIENTS_PATH = process.env.CLIENTS_PATH ?? "./clients.json";
+
+type Creds = { clientId: string; clientSecret: string };
+
+const loadClients = async (): Promise<Record<string, Creds>> => {
+  try {
+    return (await Bun.file(CLIENTS_PATH).json()) as Record<string, Creds>;
+  } catch {
+    throw new Error(`cannot read ${CLIENTS_PATH} (run idp-seed first)`);
+  }
+};
 
 const resolve = () => ({
   host: process.env.SNOWFLAKE_HOST!,
@@ -13,7 +23,7 @@ const resolve = () => ({
 
 const mint = async (tenant: string, cls: string): Promise<string> => {
   const key = `${tenant}:${cls}`;
-  const creds = (clients as Record<string, { clientId: string; clientSecret: string }>)[key];
+  const creds = (await loadClients())[key];
   if (!creds) throw new Error(`unknown tenant/class: ${key}`);
   const res = await fetch(`${KEYCLOAK}/realms/${REALM}/protocol/openid-connect/token`, {
     method: "POST",

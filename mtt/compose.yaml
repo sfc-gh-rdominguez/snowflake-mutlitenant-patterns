@@ -9,6 +9,8 @@ services:
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
+    volumes:
+      - keycloak_data:/opt/keycloak/data
     networks: [mtt]
 
   ngrok:
@@ -28,6 +30,8 @@ services:
       SNOWFLAKE_DATABASE: mtt_db
       SNOWFLAKE_SCHEMA: serving
       SNOWFLAKE_WAREHOUSE: mtt_wh
+    volumes:
+      - ./auth/clients.json:/app/clients.json:ro
     depends_on: [ngrok]
     networks: [mtt]
 
@@ -52,3 +56,6 @@ services:
 
 networks:
   mtt:
+
+volumes:
+  keycloak_data:

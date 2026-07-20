@@ -1,0 +1,6 @@
+set dotenv-load := true
+
+setup connection:
+  snow sql -c {{connection}} -f data/migrations/001_init.sql
+  snow sql -c {{connection}} -f data/migrations/002_objects.sql
+  snow sql -c {{connection}} -f data/migrations/003_data.sql

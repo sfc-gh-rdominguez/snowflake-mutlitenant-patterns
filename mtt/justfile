@@ -1,7 +1,21 @@
 set dotenv-load := true
 
+# Basic bootstrapping
 setup connection:
   snow sql -c {{connection}} -f data/migrations/001_init.sql
   snow sql -c {{connection}} -f data/migrations/002_objects.sql
   snow sql -c {{connection}} -f data/migrations/003_data.sql
   snow sql -c {{connection}} -f data/migrations/004_tenants.sql
+
+# IdP-related bootstrapping
+idp-up:
+  docker compose up -d keycloak ngrok
+  @echo "waiting for keycloak + tunnel..."; sleep 20
+
+idp-seed:
+  chmod +x auth/bootstrap.sh
+  ./auth/bootstrap.sh
+
+oauth-add connection:
+  sed "s|__KEYCLOAK_PUBLIC_URL__|${KEYCLOAK_PUBLIC_URL}|g" data/migrations/005_oauth.sql > /tmp/mtt_005.sql
+  snow sql -c {{connection}} -f /tmp/mtt_005.sql

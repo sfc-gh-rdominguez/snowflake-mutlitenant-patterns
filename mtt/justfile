@@ -13,8 +13,8 @@ idp-up:
   @echo "waiting for keycloak + tunnel..."; sleep 20
 
 idp-seed:
-  chmod +x auth/bootstrap.sh
-  ./auth/bootstrap.sh
+  chmod +x auth/scripts/bootstrap.sh
+  ./auth/scripts/bootstrap.sh
 
 oauth-add connection:
   sed "s|__KEYCLOAK_PUBLIC_URL__|${KEYCLOAK_PUBLIC_URL}|g" data/migrations/005_oauth.sql > /tmp/mtt_005.sql

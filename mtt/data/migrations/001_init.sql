@@ -5,5 +5,5 @@ USE ROLE ACCOUNTADMIN;
 CREATE ROLE IF NOT EXISTS mtt_admin;
 GRANT ROLE mtt_admin TO ROLE SYSADMIN;
 
-SET grantee = CURRENT_USER();
-EXECUTE IMMEDIATE 'GRANT ROLE mtt_admin TO USER "' || $grantee || '"';
+SET grant_stmt = 'GRANT ROLE mtt_admin TO USER "' || CURRENT_USER() || '"';
+EXECUTE IMMEDIATE $grant_stmt;

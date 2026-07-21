@@ -19,3 +19,10 @@ idp-seed:
 oauth-add connection:
   sed "s|__KEYCLOAK_PUBLIC_URL__|${KEYCLOAK_PUBLIC_URL}|g" data/migrations/005_oauth.sql > /tmp/mtt_005.sql
   snow sql -c {{connection}} -f /tmp/mtt_005.sql
+
+idp-add-users:
+  chmod +x auth/scripts/users.sh
+  ./auth/scripts/users.sh
+
+app-up:
+  docker compose up -d --build api web

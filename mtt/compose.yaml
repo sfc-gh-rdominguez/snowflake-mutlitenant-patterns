@@ -27,9 +27,9 @@ services:
     environment:
       KEYCLOAK_URL: ${KEYCLOAK_PUBLIC_URL}
       SNOWFLAKE_HOST: ${SNOWFLAKE_HOST}
-      SNOWFLAKE_DATABASE: mtt_db
-      SNOWFLAKE_SCHEMA: serving
-      SNOWFLAKE_WAREHOUSE: mtt_wh
+      SNOWFLAKE_DATABASE: MTT_DB
+      SNOWFLAKE_SCHEMA: SERVING
+      SNOWFLAKE_WAREHOUSE: MTT_WH
     volumes:
       - ./auth/clients.json:/app/clients.json:ro
     depends_on: [ngrok]
@@ -38,11 +38,21 @@ services:
   api:
     build: ./api
     environment:
-      AUTH_URL: http://auth:8090
+      KEYCLOAK_URL: ${KEYCLOAK_PUBLIC_URL}
+      REALM: tenants
+      WEB_CLIENT_ID: mtt-web
+      APP_BASE_URL: http://localhost:8000
+      SNOWFLAKE_HOST: ${SNOWFLAKE_HOST}
+      SNOWFLAKE_DATABASE: MTT_DB
+      SNOWFLAKE_SCHEMA: SERVING
+      SNOWFLAKE_WAREHOUSE: MTT_WH
       SERVER_PORT: 8001
+    env_file:
+      - path: auth/web.env
+        required: false
     ports:
       - "8001:8001"
-    depends_on: [auth]
+    depends_on: [ngrok]
     networks: [mtt]
 
   web:

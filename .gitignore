@@ -1,2 +1,3 @@
 .env
 mtt/auth/clients.json
+mtt/auth/web.env

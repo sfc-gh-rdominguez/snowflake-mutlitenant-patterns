@@ -14,10 +14,17 @@ flowchart RL
     duff["Duff tenant"] --> app
     krusty["Krusty tenant"] --> app
     app["App"] -->|"authenticate → tenant + role"| idp["Keycloak (IdP)"]
-    app -->|"query with token"| view
+    app -->|"query with token"| mtt-wh
 
     subgraph snowflake["Snowflake"]
-        view["serving.sales (secure view)"] --> sales["base.sales (shared table)"]
+        subgraph compute["Compute"]
+            mtt-wh["mtt_wh"]
+        end
+        subgraph data["Data"]
+            view["serving.sales (secure view)"] --> sales["base.sales (shared table)"]
+        end
+
+            mtt-wh --> view
     end
 ```
 

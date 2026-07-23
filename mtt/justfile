@@ -26,3 +26,7 @@ idp-add-users:
 
 app-up:
   docker compose up -d --build api web
+
+teardown connection:
+  docker compose down -v
+  snow sql -c {{connection}} -f data/teardown/teardown.sql

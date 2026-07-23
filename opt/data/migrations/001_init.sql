@@ -7,3 +7,8 @@ GRANT ROLE opt_admin TO ROLE SYSADMIN;
 
 SET grant_stmt = 'GRANT ROLE opt_admin TO USER "' || CURRENT_USER() || '"';
 EXECUTE IMMEDIATE $grant_stmt;
+
+CREATE DATABASE IF NOT EXISTS opt_admin_db;
+CREATE SCHEMA IF NOT EXISTS opt_admin_db.admin;
+
+CREATE WAREHOUSE IF NOT EXISTS opt_admin_wh WITH WAREHOUSE_SIZE = "xsmall";

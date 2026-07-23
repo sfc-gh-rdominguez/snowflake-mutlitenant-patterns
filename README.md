@@ -31,7 +31,8 @@ It's the quickest path to a multitenant experience and the cheapest to operate -
 one data model, shared compute - but it puts the most weight on getting your
 access controls right, since a mistake leaks one tenant's rows to another.
 
-See the [`mtt/` walkthrough](./mtt/docs/WALKTHROUGH.md) for a runnable example.
+See the [`mtt/` walkthrough](./mtt/docs/00_WALKTHROUGH.md) for a runnable
+example.
 
 ### Object Per Tenant (OTT)
 
@@ -43,21 +44,20 @@ Coming soon.
 
 ## How to use this repository
 
-Each architecture lives in its own top-level directory (like
-[`mtt/`](./mtt)), with a walkthrough under its `docs/` directory. To try one,
-open that walkthrough and follow it top to bottom - the steps are `just` recipes
-you run in order, so there's little to do beyond reading along and running the
-commands.
+Each architecture lives in its own top-level directory (like [`mtt/`](./mtt)),
+with a walkthrough under its `docs/` directory. To try one, open that
+walkthrough and follow it top to bottom - the steps are `just` recipes you run
+in order, so there's little to do beyond reading along and running the commands.
 
 ## What you'll need
 
 - [Docker](https://www.docker.com) - runs the local app and identity provider.
-- [Snow CLI](https://docs.snowflake.com/en/developer-guide/snowflake-cli/index) -
-  applies the Snowflake migrations.
+- [Snow CLI](https://docs.snowflake.com/en/developer-guide/snowflake-cli/index)
+  - applies the Snowflake migrations.
 - A free [ngrok](https://ngrok.com) account - tunnels your local identity
-  provider to Snowflake.
+provider to Snowflake.
 - [just](https://github.com/casey/just) - runs the recipes each walkthrough is
-  built around.
+built around.
 
 ## Contributions or issues
 

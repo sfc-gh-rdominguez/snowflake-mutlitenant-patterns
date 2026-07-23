@@ -229,3 +229,11 @@ remain on disk; remove them for a clean slate:
 ```sh
 rm -f auth/clients.json auth/web.env
 ```
+
+## Next steps
+
+This is the most basic example in the repository. Later, we'll see other
+patterns on the spectrum, but there are also variants of each. For more
+information, see:
+
+- [`mtt/` noisy neighbor](./01_variation_noisy_neighbor.md)

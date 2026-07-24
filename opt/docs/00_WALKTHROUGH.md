@@ -2,37 +2,47 @@
 
 ## Situation
 
-A **multitenant-table (MTT) architecture** for managed apps on top of Snowflake
-allows for the quickest path to a multitenant experience with data served from
-Snowflake. In this scenario, an application - along with an identity provider -
-sit outside of Snowflake; multiple tenants are provisioned in the identity
-provider and - using a service account per tenant - grant access to the
-appropriate underlying data, which is all stored in **shared objects**:
+An **object-per-tenant (OTT) architecture** for managed apps on top of Snowflake
+trades density for isolation: instead of one shared data model, every tenant
+gets its own database, warehouse, and objects. An application - along with an
+identity provider - sits outside of Snowflake; multiple tenants are provisioned
+in the identity provider and - using a service account per tenant - reach only
+their own tenant's database. Isolation is structural: the database boundary
+keeps tenants apart, so there's no shared table and no entitlements join to get
+wrong. The only in-Snowflake policy left is a masking policy that hides `amount`
+from viewers:
 
 ```mermaid
 flowchart RL
+    subgraph snowflake["Snowflake"]
+        subgraph duffdb["duff_db"]
+            duff_wh["duff_wh"]
+            duff_view["serving.sales (secure view)"]
+            duff_base["base.sales (duff rows)"]
+        end
+        subgraph krustydb["krusty_db"]
+            krusty_wh["krusty_wh"]
+            krusty_view["serving.sales (secure view)"]
+            krusty_base["base.sales (krusty rows)"]
+        end
+    end
+
     duff["Duff tenant"] --> app
     krusty["Krusty tenant"] --> app
     app["App"] -->|"authenticate → tenant + role"| idp["Keycloak (IdP)"]
-    app -->|"query with token"| opt-wh
-
-    subgraph snowflake["Snowflake"]
-        subgraph compute["Compute"]
-            opt-wh["opt_wh"]
-        end
-        subgraph data["Data"]
-            view["serving.sales (secure view)"] --> sales["base.sales (shared table)"]
-        end
-
-            opt-wh --> view
-    end
+    app -->|"query with token"| duff_wh
+    app -->|"query with token"| krusty_wh
+    duff_wh --> duff_view
+    duff_view --> duff_base
+    krusty_wh --> krusty_view
+    krusty_view --> krusty_base
 ```
 
 ## Objectives
 
 In following the `justfile` recipes, you'll:
 
-1. **Bootstrap** a basic multitenant-table data model. 
+1. **Bootstrap** a control plane and provision two isolated tenants.
 2. **Run** a local identity provider.
 3. **Provision** an OAuth connection in Snowflake.
 4. **Add** two users to each tenant with two levels of access.
@@ -88,30 +98,36 @@ connection list`:
 just setup <connection>
 ```
 
-That runs four migrations in order:
+That runs three migrations in order:
 
-- **`001_init.sql`** — creates the `opt_admin` role and grants it to
-`CURRENT_USER()`. This role owns the data model.
-- **`002_objects.sql`** — creates the `opt_db` database, the shared `opt_wh`
-warehouse, and two schemas: `base` (raw tables and entitlements) and `serving`
-(the secure views we expose). All tenants share these objects.
-- **`003_data.sql`** — creates one `base.sales` table for all tenants, clustered
-by `(tenant_id, sale_ts)` so tenant-scoped queries prune other tenants'
-micro-partitions. Seeds a million rows across the two tenants, then adds:
-  - `base.entitlements`, mapping each **role** to a **tenant_id**.
-  - `base.mask_amount`, a masking policy returning `amount` only when
-  `CURRENT_ROLE()` ends in `_ADMIN`, else `NULL`.
+- **`001_init.sql`** — creates the `opt_admin` control-plane role (granted to
+`SYSADMIN` and to `CURRENT_USER()`), the `opt_admin_db` database with its
+`admin` schema, and the `opt_admin_wh` warehouse. This is the control plane that
+provisions tenants — no tenant data lives here.
+- **`002_tenants_sprocs.sql`** — creates seven stored procedures in
+`opt_admin_db.admin`, each one step of standing up a tenant:
+`create_tenant_db`, `create_tenant_schemas`, `create_tenant_wh`,
+`create_tenant_roles`, `create_tenant_svc_principal`, `create_tenant_data`, and
+`grant_tenant_usage`. Because every tenant is provisioned the same way, the
+repetition lives in procedures instead of copy-pasted DDL.
+  - `create_tenant_data` seeds a `<tenant>_db.base.sales` table (200k rows,
+  clustered by `sale_ts`), adds `base.mask_amount` — a masking policy returning
+  `amount` only when `CURRENT_ROLE()` ends in `_ADMIN`, else `NULL` — and
+  exposes `serving.sales`, a secure view over the base table.
+  - `grant_tenant_usage` grants both tenant roles to the tenant's service user,
+  then gives each role identical access to the tenant's serving schema, view,
+  and warehouse — never `base`.
+- **`003_add_tenants.sql`** — calls the seven procedures for `duff` and
+`krusty`, materializing each tenant's `<tenant>_db`, `<tenant>_wh`, roles, and
+`TYPE = SERVICE` user (`TENANT_DUFF_SVC`, `TENANT_KRUSTY_SVC`). In production
+you'd drive this from a provisioning script, not a migration; the two defaults
+are hardcoded here for simplicity.
 
-  The `serving.sales` secure view joins the two on `WHERE e.role_name =
-  CURRENT_ROLE()`. Both row isolation and column masking key off the querying
-  role.
-- **`004_tenants.sql`** — creates four roles (`admin`/`viewer` per tenant) and
-one `TYPE = SERVICE` user per tenant (`TENANT_DUFF_SVC`, `TENANT_KRUSTY_SVC`),
-grants each tenant's two roles to its service user, and grants all four roles
-identical access to the serving schema, view, and warehouse — never `base`.
-
-The split: one service account per tenant, one role per access level. The OAuth
-token selects the active role per request.
+The split: one database and warehouse per tenant, one service account per
+tenant, one role per access level. The database boundary handles row isolation;
+the masking policy handles column access; the OAuth token selects the active
+role per request. OAuth itself (`005_oauth.sql`) is applied separately in step
+4.
 
 ### 3. Run the IdP
 
@@ -194,19 +210,21 @@ users. The app shows:
 
 1. **Token asserts** — the `snowflake_user`, `scp`, and `aud` claims from the
    access token.
-2. **Snowflake resolved** — `CURRENT_USER()` and `CURRENT_ROLE()`.
+2. **Snowflake resolved** — `CURRENT_USER()`, `CURRENT_ROLE()`, and
+   `CURRENT_WAREHOUSE()`.
 3. **Revenue by region** — a `GROUP BY region` over `serving.sales`.
 
 Compare across users:
 
-- **Barney** (Duff admin): Duff rows, with revenue.
-- **Moe** (Duff viewer): same Duff rows, revenue reads **"— restricted —"**
-(masked to `NULL`).
-- **Marge** / **Homer**: Krusty rows only, admin/viewer splitting revenue the
-same way.
+- **Barney** (Duff admin): Duff rows, with revenue, on `DUFF_WH`.
+- **Moe** (Duff viewer): same Duff rows on `DUFF_WH`, revenue reads **"—
+restricted —"** (masked to `NULL`).
+- **Marge** / **Homer**: Krusty rows only, on `KRUSTY_WH`, admin/viewer
+splitting revenue the same way.
 
-One table, one secure view, per-role rows and columns. Sign out (which also ends
-the Keycloak SSO session) before switching users.
+Each tenant's own database, warehouse, and secure view — separate compute and
+separate storage, with only the masking policy shared in spirit across tenants.
+Sign out (which also ends the Keycloak SSO session) before switching users.
 
 ### 7. Clean up
 
@@ -228,10 +246,12 @@ Tear down local volumes and the Snowflake data model:
 just teardown <connection>
 ```
 
-This runs `docker compose down -v` and `teardown.sql`, dropping the database,
-warehouse, four tenant roles, two service users, `opt_admin`, and the
-`opt_keycloak` integration. The generated `auth/clients.json` and `auth/web.env`
-remain on disk; remove them for a clean slate:
+This runs `docker compose down -v` and `teardown.sql`, dropping both tenant
+databases (`duff_db`, `krusty_db`) and warehouses (`duff_wh`, `krusty_wh`), the
+four tenant roles, the two service users, the control plane (`opt_admin_db`,
+`opt_admin_wh`, `opt_admin`), and the `opt_keycloak` integration. The generated
+`auth/clients.json` and `auth/web.env` remain on disk; remove them for a clean
+slate:
 
 ```sh
 rm -f auth/clients.json auth/web.env
@@ -239,8 +259,12 @@ rm -f auth/clients.json auth/web.env
 
 ## Next steps
 
-This is the most basic example in the repository. Later, we'll see other
-patterns on the spectrum, but there are also variants of each. For more
-information, see:
+Object-per-tenant sits in the middle of the isolation spectrum — more isolated
+than the shared-table model, less operationally heavy than an account per
+tenant. To see the other patterns, follow:
 
-- [`opt/` noisy neighbor](./01_variation_noisy_neighbor.md)
+- [`mtt/` walkthrough](../../mtt/docs/00_WALKTHROUGH.md) — the most-shared end:
+one data model, shared compute, isolation enforced with secure views and
+entitlements.
+- Account per tenant (ATT) — the most-isolated end; coming soon. See the
+[repository README](../../README.md#architectures) for the full spectrum.

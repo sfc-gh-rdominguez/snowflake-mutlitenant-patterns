@@ -36,7 +36,20 @@ example.
 
 ### Object Per Tenant (OTT)
 
-Coming soon.
+The middle of the spectrum. Each tenant gets its own database, warehouse, and
+objects, so isolation is structural - the database boundary keeps tenants apart,
+with no shared table and no entitlements join to get wrong. A masking policy per
+tenant still handles per-role column access. Each tenant gets one service
+account, mapped in from the app's identity provider over External OAuth, plus a
+role per level of access. Provisioning is driven by stored procedures so every
+tenant is stood up the same way.
+
+You trade the shared model's density for stronger isolation and a smaller blast
+radius - a mistake can't leak one tenant's rows into another's - at the cost of
+multiplying the objects and compute you operate as tenants grow.
+
+See the [`opt/` walkthrough](./opt/docs/00_WALKTHROUGH.md) for a runnable
+example.
 
 ### Account Per Tenant (ATT)
 

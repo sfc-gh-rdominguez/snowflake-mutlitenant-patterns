@@ -6,8 +6,23 @@ type RowType = { name: string; type: string };
 const coerce = (raw: string | null, t: string) =>
   raw === null ? null : t === "fixed" || t === "real" ? Number(raw) : t === "boolean" ? raw === "true" : raw;
 
+/**
+  * Utility function: since we know the warehosue and role naming conventions we
+  * can use regex to grab the tenant name.
+  */
+function getTenantName(role: string): string {
+  const match = /_([^_]+)_/.exec(role);
+  if (!match) throw new Error(`cannot derive tenant name from role "${role}"`);
+
+  return match[1];
+}
+
 export const query = async <T = Record<string, unknown>>(token: string, statement: string): Promise<T[]> => {
   const role = String(decodeClaims(token).scp ?? "").replace(/^session:role:/, "");
+  const tenantName = getTenantName(role).toUpperCase();
+  const warehouseName = `${tenantName}_WH`;
+  const databaseName = `${tenantName}_DB`;
+  
   const res = await fetch(`https://${process.env.SNOWFLAKE_HOST}/api/v2/statements`, {
     method: "POST",
     headers: {
@@ -18,9 +33,9 @@ export const query = async <T = Record<string, unknown>>(token: string, statemen
     },
     body: JSON.stringify({
       statement, timeout: 60, role,
-      warehouse: process.env.SNOWFLAKE_WAREHOUSE,
-      database: process.env.SNOWFLAKE_DATABASE,
-      schema: process.env.SNOWFLAKE_SCHEMA,
+      warehouse: warehouseName,
+      database: databaseName,
+      schema: `SERVING`
     }),
   });
   if (res.status !== 200) throw new Error(`SQL API ${res.status}: ${await res.text()}`);

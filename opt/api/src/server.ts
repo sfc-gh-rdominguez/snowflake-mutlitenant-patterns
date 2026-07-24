@@ -10,6 +10,14 @@ const to = (set: any, url: string) => { set.status = 302; set.headers["Location"
 const sid = (req: Request) => store.readCookie(req.headers.get("cookie"), SID);
 
 new Elysia()
+  .onRequest(({ request }) => {
+    console.log(`--> ${request.method} ${new URL(request.url).pathname}`);
+  })
+  .onError(({ code, error, request }) => {
+    const path = new URL(request.url).pathname;
+    const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(`[error] ${request.method} ${path} (${code}): ${detail}`);
+  })
   .get("/healthcheck", () => "ok")
   .get("/auth/login", async ({ set }) => {
     const state = crypto.randomUUID();
@@ -46,7 +54,7 @@ new Elysia()
       const token = await store.freshToken(s);
       const claims = decodeClaims(token);
       const [identity] = await query(token,
-        `SELECT CURRENT_USER() AS "USER", CURRENT_ROLE() AS "ROLE", CURRENT_WAREHOUSE() AS "WAREHOUSE"`);
+        `SELECT CURRENT_USER() AS "USER", CURRENT_ROLE() AS "ROLE", CURRENT_WAREHOUSE() AS "WAREHOUSE",`);
       const regions = await query(token,
         `SELECT region AS "REGION", COUNT(*) AS "ORDERS", ROUND(SUM(amount),2) AS "REVENUE"
          FROM serving.sales GROUP BY region ORDER BY "ORDERS" DESC`);
@@ -56,6 +64,7 @@ new Elysia()
         identity, regions,
       };
     } catch (err) {
+      console.error("[/api/view]", err instanceof Error ? err.stack ?? err.message : err);
       set.status = 500;
       return { error: err instanceof Error ? err.message : String(err) };
     }

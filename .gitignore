@@ -1,3 +1,5 @@
 .env
 mtt/auth/clients.json
 mtt/auth/web.env
+opt/auth/clients.json
+opt/auth/web.env

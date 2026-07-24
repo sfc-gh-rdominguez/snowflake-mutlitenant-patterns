@@ -6,26 +6,26 @@ setup connection:
   snow sql -c {{connection}} -f data/migrations/002_tenants_sprocs.sql
   snow sql -c {{connection}} -f data/migrations/003_add_tenants.sql
 
-# # IdP-related bootstrapping
-# idp-up:
-#   docker compose up -d keycloak ngrok
-#   @echo "waiting for keycloak + tunnel..."; sleep 20
-#
-# idp-seed:
-#   chmod +x auth/scripts/bootstrap.sh
-#   ./auth/scripts/bootstrap.sh
-#
-# oauth-add connection:
-#   sed "s|__KEYCLOAK_PUBLIC_URL__|${KEYCLOAK_PUBLIC_URL}|g" data/migrations/005_oauth.sql > /tmp/opt_005.sql
-#   snow sql -c {{connection}} -f /tmp/opt_005.sql
-#
-# idp-add-users:
-#   chmod +x auth/scripts/users.sh
-#   ./auth/scripts/users.sh
-#
-# app-up:
-#   docker compose up -d --build api web
-#
+# IdP-related bootstrapping
+idp-up:
+  docker compose up -d keycloak ngrok
+  @echo "waiting for keycloak + tunnel..."; sleep 20
+
+idp-seed:
+  chmod +x auth/scripts/bootstrap.sh
+  ./auth/scripts/bootstrap.sh
+
+oauth-add connection:
+  sed "s|__KEYCLOAK_PUBLIC_URL__|${KEYCLOAK_PUBLIC_URL}|g" data/migrations/005_oauth.sql > /tmp/opt_005.sql
+  snow sql -c {{connection}} -f /tmp/opt_005.sql
+
+idp-add-users:
+  chmod +x auth/scripts/users.sh
+  ./auth/scripts/users.sh
+
+app-up:
+  docker compose up -d --build api web
+
 teardown connection:
   docker compose down -v
   snow sql -c {{connection}} -f data/teardown/teardown.sql

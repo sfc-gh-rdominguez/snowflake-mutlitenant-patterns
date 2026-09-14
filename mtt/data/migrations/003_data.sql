@@ -28,6 +28,15 @@ INSERT INTO base.entitlements VALUES
   ('TENANT_DUFF_ADMIN','duff'),   ('TENANT_DUFF_VIEWER','duff'),
   ('TENANT_KRUSTY_ADMIN','krusty'),('TENANT_KRUSTY_VIEWER','krusty');
 
+-- Row isolation sits on the table, so it holds on every path that reads it --
+-- through the serving view or via a direct grant on base. The owner role is
+-- exempt so it can still administer and inspect the data.
+CREATE OR REPLACE ROW ACCESS POLICY base.tenant_rap AS (row_tenant_id STRING) RETURNS BOOLEAN ->
+  CURRENT_ROLE() = 'MTT_ADMIN'
+  OR EXISTS (SELECT 1 FROM base.entitlements e
+             WHERE e.role_name = CURRENT_ROLE() AND e.tenant_id = row_tenant_id);
+ALTER TABLE base.sales ADD ROW ACCESS POLICY base.tenant_rap ON (tenant_id);
+
 -- Column masking is the admin/viewer differentiator. It evaluates against the
 -- QUERYING role (not the view owner), so a viewer sees NULL for amount even
 -- through the shared secure view. Admins (role ends in _ADMIN) see real values.
@@ -35,9 +44,7 @@ CREATE OR REPLACE MASKING POLICY base.mask_amount AS (val NUMBER) RETURNS NUMBER
   CASE WHEN ENDSWITH(CURRENT_ROLE(), '_ADMIN') THEN val ELSE NULL END;
 ALTER TABLE base.sales MODIFY COLUMN amount SET MASKING POLICY base.mask_amount;
 
--- The secure view enforces tenant isolation via CURRENT_ROLE().
+-- The view pins the exposed column list; the policies above enforce access.
 CREATE OR REPLACE SECURE VIEW serving.sales AS
   SELECT s.tenant_id, s.sale_id, s.sale_ts, s.region, s.product, s.quantity, s.amount
-  FROM base.sales s
-  JOIN base.entitlements e ON s.tenant_id = e.tenant_id
-  WHERE e.role_name = CURRENT_ROLE();
+  FROM base.sales s;

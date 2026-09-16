@@ -259,6 +259,9 @@ rm -f auth/clients.json auth/web.env
 
 ## Next steps
 
+For an alternative identity model, see the
+[`opt/` single service user variation](./01_variation_single_service_user.md).
+
 Object-per-tenant sits in the middle of the isolation spectrum — more isolated
 than the shared-table model, less operationally heavy than an account per
 tenant. To see the other patterns, follow:

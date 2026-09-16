@@ -19,7 +19,7 @@ flowchart RL
             mtt-wh["mtt_wh"]
         end
         subgraph data["Data"]
-            view["serving.sales (secure view)"] --> sales["base.sales (shared table + row access policy)"]
+            view["serving.sales (secure view)"] --> sales["base.sales (shared table)"]
         end
 
             mtt-wh --> view
@@ -47,15 +47,14 @@ BFF splits apart the token's `scp` claim and extracts both the tenant and the ro
 session against Snowflake using the parsed role, ensuring any queries are scoped to the role itself.
 
 When any query runs in the session, the tenant role can only see the objects it's been granted (such as `USAGE` on its
-database and `SELECT` on the appropriate view). Cross-tenant data is unreachable because a row access policy on
-`base.sales` filters rows by `CURRENT_ROLE()` against an entitlements table (map); isolation is enforced by the querying
-role and applies on every path that reads the table.
+database and `SELECT` on the appropriate view). Cross-tenant data is unreachable because the secure view filters rows by
+`CURRENT_ROLE()` against an entitlements table (map); isolation is enforced by the querying role and scopes what the
+view returns.
 
-> [!NOTE]
-> Attaching the filter to the table rather than to the serving view keeps isolation intact on any other path to the
-> data, including a direct grant on `base`. The view pins the exposed column list. The two are complementary: the policy
-> owns access, so it holds no matter how the data is reached, while the view owns the interface, letting you add columns
-> or reshape `base` without changing what tenants query.
+> [!NOTE] Alternatively, attach a row-access policy to `base.sales` that applies the same `CURRENT_ROLE()`/entitlements
+> filter at the table. The filter then travels with the data on every access path, so tenant isolation holds even for a
+> role granted `SELECT` on `base` directly. This walkthrough keeps isolation in the secure view to show the simplest MTT
+> shape.
 
 ## Execution
 
@@ -107,11 +106,10 @@ That runs four migrations in order:
 - **`003_data.sql`** — creates one `base.sales` table for all tenants, clustered by `(tenant_id, sale_ts)` so
   tenant-scoped queries prune other tenants' micro-partitions. Seeds a million rows across the two tenants, then adds:
   - `base.entitlements`, mapping each **role** to a **tenant_id**.
-  - `base.tenant_rap`, a row access policy admitting a row only when the querying role maps to that row's `tenant_id`.
   - `base.mask_amount`, a masking policy returning `amount` only when `CURRENT_ROLE()` ends in `_ADMIN`, else `NULL`.
 
-  Both policies attach to `base.sales` and key off the querying role, so `serving.sales` is a plain projection of the
-  exposed columns.
+  The `serving.sales` secure view joins the two on `WHERE e.role_name =   CURRENT_ROLE()`. Both row isolation and column
+  masking key off the querying role.
 
 - **`004_tenants.sql`** — creates four roles (`admin`/`viewer` per tenant) and one `TYPE = SERVICE` user per tenant
   (`TENANT_DUFF_SVC`, `TENANT_KRUSTY_SVC`), grants each tenant's two roles to its service user, and grants all four
@@ -201,7 +199,7 @@ Compare across users:
 - **Moe** (Duff viewer): same Duff rows, revenue reads **"— restricted —"** (masked to `NULL`).
 - **Marge** / **Homer**: Krusty rows only, admin/viewer splitting revenue the same way.
 
-One table, two policies, per-role rows and columns. Sign out (which also ends the Keycloak SSO session) before
+One table, one secure view, per-role rows and columns. Sign out (which also ends the Keycloak SSO session) before
 switching users.
 
 ### 7. Clean up

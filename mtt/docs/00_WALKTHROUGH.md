@@ -238,3 +238,4 @@ This is the most basic example in the repository. Later, we'll see other pattern
 variants of each. For more information, see:
 
 - [`mtt/` noisy neighbor](./01_variation_noisy_neighbor.md)
+- [`mtt/` single service user](./02_variation_single_service_user.md)

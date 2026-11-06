@@ -1,6 +1,11 @@
 server {
   listen 8000;
   location = /healthcheck { return 200 'ok'; add_header Content-Type text/plain; }
+  # Stream agent tokens as they arrive.
+  location = /api/agent {
+    proxy_pass ${API_URL}; proxy_set_header Host $host;
+    proxy_buffering off; proxy_cache off; proxy_read_timeout 300s;
+  }
   location /api/  { proxy_pass ${API_URL}; proxy_set_header Host $host; }
   location /auth/ { proxy_pass ${API_URL}; proxy_set_header Host $host; }
   location /      { root /usr/share/nginx/html; try_files $uri /index.html; }

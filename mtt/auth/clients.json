@@ -1,0 +1,6 @@
+{
+  "duff:admin": { "clientId": "tenant-duff-admin", "clientSecret": "IoxzAwTA1WW4vPYdgYlJWcfTNQNVvWqJ" },
+  "duff:viewer": { "clientId": "tenant-duff-viewer", "clientSecret": "c8jsPxPSvYLKxXoF80JCidzBWYhwvT0S" },
+  "krusty:admin": { "clientId": "tenant-krusty-admin", "clientSecret": "wphMnl7GCmJ41lkyWqufJ4548LXZOIv4" },
+  "krusty:viewer": { "clientId": "tenant-krusty-viewer", "clientSecret": "UmzLslmvkFZds8tlIX26mue6RPMExgFp" }
+}

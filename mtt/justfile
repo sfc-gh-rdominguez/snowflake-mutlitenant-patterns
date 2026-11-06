@@ -1,31 +1,42 @@
 set dotenv-load := true
 
-# Basic bootstrapping
+# Snowflake data model, policies, app user, semantic view, and agent
 setup connection:
   snow sql -c {{connection}} -f data/migrations/001_init.sql
   snow sql -c {{connection}} -f data/migrations/002_objects.sql
   snow sql -c {{connection}} -f data/migrations/003_data.sql
-  snow sql -c {{connection}} -f data/migrations/004_tenants.sql
+  snow sql -c {{connection}} -f data/migrations/004_app.sql
+  snow sql -c {{connection}} -f data/migrations/005_agent.sql
 
-# IdP-related bootstrapping
+# Generate the app user's key pair locally (keys/ is gitignored)
+keypair:
+  mkdir -p keys
+  openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out keys/app_svc.p8 -nocrypt
+  openssl rsa -in keys/app_svc.p8 -pubout -out keys/app_svc.pub
+  chmod 600 keys/app_svc.p8
+
+# Register the public key on MTT_APP_SVC
+set-key connection:
+  snow sql -c {{connection}} --role mtt_admin -q "ALTER USER mtt_app_svc SET RSA_PUBLIC_KEY = '$(grep -v -- '-----' keys/app_svc.pub | tr -d '\n')'"
+
+# Local IdP (human login only)
 idp-up:
-  docker compose up -d keycloak ngrok
-  @echo "waiting for keycloak + tunnel..."; sleep 20
+  docker compose up -d keycloak
+  @echo "waiting for keycloak..."; sleep 20
 
 idp-seed:
-  chmod +x auth/scripts/bootstrap.sh
-  ./auth/scripts/bootstrap.sh
-
-oauth-add connection:
-  sed "s|__KEYCLOAK_PUBLIC_URL__|${KEYCLOAK_PUBLIC_URL}|g" data/migrations/005_oauth.sql > /tmp/mtt_005.sql
-  snow sql -c {{connection}} -f /tmp/mtt_005.sql
-
-idp-add-users:
-  chmod +x auth/scripts/users.sh
-  ./auth/scripts/users.sh
+  chmod +x auth/scripts/seed.sh
+  ./auth/scripts/seed.sh
 
 app-up:
   docker compose up -d --build api web
+
+# Onboarding is one row: just tenant-add <conn> apu kwik viewer
+tenant-add connection user tenant level:
+  snow sql -c {{connection}} --role mtt_admin -q "INSERT INTO mtt_db.security.entitlements VALUES ('{{user}}', 'MTT_APP_SVC', '{{tenant}}', '{{level}}')"
+
+tenant-remove connection user:
+  snow sql -c {{connection}} --role mtt_admin -q "DELETE FROM mtt_db.security.entitlements WHERE end_user_id = '{{user}}'"
 
 teardown connection:
   docker compose down -v

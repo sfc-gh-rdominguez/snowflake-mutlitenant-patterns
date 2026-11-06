@@ -21,11 +21,13 @@ you're willing to carry.
 ### Multitenant Table (MTT)
 
 The most-shared end of the spectrum. Every tenant's data lives in the same
-physical tables, and isolation is enforced inside Snowflake with secure views
-and policies that key off the querying role - a join to an entitlements table
-for tenant (row) isolation, and a masking policy for per-role column access.
-Each tenant gets one service account, mapped in from the app's identity provider
-over External OAuth, plus a role per level of access.
+physical tables, and isolation is enforced inside Snowflake by row access and
+masking policies attached to those tables. The app connects as a single service
+user; for each request it names the signed-in end user in an immutable session
+attribute, and the policies resolve that user's tenant and access level from an
+entitlements table. Onboarding a tenant is an `INSERT`, not new roles or users,
+and because isolation lives on the table it also holds for a Cortex agent
+writing its own SQL. The earlier role-per-tenant design is kept as a variation.
 
 It's the quickest path to a multitenant experience and the cheapest to operate -
 one data model, shared compute - but it puts the most weight on getting your
@@ -68,7 +70,7 @@ in order, so there's little to do beyond reading along and running the commands.
 - [Snow CLI](https://docs.snowflake.com/en/developer-guide/snowflake-cli/index)
   - applies the Snowflake migrations.
 - A free [ngrok](https://ngrok.com) account - tunnels your local identity
-provider to Snowflake.
+provider to Snowflake (`opt/` and the `mtt/` per-tenant-roles variation only).
 - [just](https://github.com/casey/just) - runs the recipes each walkthrough is
 built around.
 

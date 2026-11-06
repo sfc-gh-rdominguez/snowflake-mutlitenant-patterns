@@ -2,21 +2,20 @@
 
 ## Situation
 
-In the basic MTT architecture, all tenants share all data and compute resources.
-If a particular tenant has a greater volume of queries or higher rates of
-concurrency than their neighbors (the other tenants), this can cause queueing
-and performance issues for everyone. This is the noisy neighbor problem.
+In the basic MTT architecture, all tenants share all data and compute. If one tenant runs many more queries, or many
+more at once, than its neighbors, everyone else can see queueing and slowdowns. This is the noisy neighbor problem.
 
-With Snowflake, we can simply provision a dedicated warehouse for the noisy
-tenant and route their queries through that compute instead of the shared
-`mtt_wh`.
+With Snowflake, you can give the noisy tenant its own warehouse and route its queries there instead of the shared
+`mtt_wh`. Because everything runs as one service user and one role, the routing decision comes from **data**: a
+tenant → warehouse table next to the entitlements. Adding a dedicated tenant is still DML, apart from creating the
+warehouse itself.
 
 ```mermaid
 flowchart RL
-    duff["Duff tenant"] --> app
-    krusty["Krusty tenant"] --> app
-    app["App"] -->|"authenticate → tenant + role"| idp["Keycloak (IdP)"]
-    app -->|"duff query"| duff-wh
+    duff["Duff users"] --> app
+    krusty["Krusty users"] --> app
+    app["App (BFF)"] -->|"authenticate"| idp["Keycloak (IdP)"]
+    app -->|"duff session"| duff-wh
     app -->|"all other tenants"| mtt-wh
 
     subgraph snowflake["Snowflake"]
@@ -25,113 +24,97 @@ flowchart RL
             mtt-wh["mtt_wh"]
         end
         subgraph data["Data"]
-            view["serving.sales (secure view)"] --> sales["base.sales (shared table)"]
+            sales["base.sales (shared table + policies)"]
         end
-
-            duff-wh --> view
-            mtt-wh --> view
+        duff-wh --> sales
+        mtt-wh --> sales
     end
 ```
 
-In the example above, Duff is allocated its own warehouse, yet the same database
-is still used by all tenants, including Duff. However, Duff's usage won't affect
-the other tenants as they have their own dedicated compute (which they can be
-charged for at a premium by the provider).
+The data is still shared by every tenant. Duff's load lands on compute that only Duff uses, which you can bill at a
+premium.
 
 ## How to achieve this
 
-### 1. Provision a dedicated warehouse
+### 1. Provision the warehouse and the routing table
 
-Add a variation migration, `data/migrations/006_noisy_neighbor.sql`, mirroring
-how `002_objects.sql` creates `mtt_wh`:
+Add `data/migrations/006_noisy_neighbor.sql`:
 
 ```sql
 USE ROLE ACCOUNTADMIN;
 
--- Dedicated compute for the noisy tenant (Duff).
 CREATE WAREHOUSE IF NOT EXISTS duff_wh
   WAREHOUSE_SIZE = 'XSMALL' AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE;
 GRANT USAGE ON WAREHOUSE duff_wh TO ROLE mtt_admin;
+-- One app role: it needs USAGE on every warehouse it may be routed to.
+GRANT USAGE ON WAREHOUSE duff_wh TO ROLE mtt_app_role;
+
+USE ROLE mtt_admin;
+USE WAREHOUSE mtt_wh;
+
+-- Tenants without a row use the shared mtt_wh.
+CREATE TABLE IF NOT EXISTS mtt_db.security.tenant_compute (tenant_id STRING, warehouse STRING);
+MERGE INTO mtt_db.security.tenant_compute t USING (SELECT 'duff' tenant_id, 'DUFF_WH' warehouse) s
+  ON t.tenant_id = s.tenant_id
+  WHEN MATCHED THEN UPDATE SET warehouse = s.warehouse
+  WHEN NOT MATCHED THEN INSERT VALUES (s.tenant_id, s.warehouse);
+
+-- The app role still has nothing on `security`; this secure view resolves only
+-- the current session's end user, with the same binding the policies use.
+CREATE OR REPLACE SECURE VIEW mtt_db.serving.my_compute AS
+  SELECT e.tenant_id, COALESCE(c.warehouse, 'MTT_WH') AS warehouse
+  FROM mtt_db.security.entitlements e
+  LEFT JOIN mtt_db.security.tenant_compute c USING (tenant_id)
+  WHERE e.end_user_id = SYS_CONTEXT('SNOWFLAKE$SESSION_ATTRIBUTES', 'end_user_id')
+    AND e.app_user    = CURRENT_USER();
+GRANT SELECT ON VIEW mtt_db.serving.my_compute TO ROLE mtt_app_role;
 ```
 
-### 2. Grant usage to the tenant's role and service principal
+Moving another tenant onto dedicated compute is then one `INSERT` into `security.tenant_compute`, once the warehouse
+exists and the app role has `USAGE` on it.
 
-Warehouse `USAGE` is granted to roles, not users. Grant it to Duff's two roles;
-the `tenant_duff_svc` service principal inherits access through them. Append to
-the same migration:
+### 2. Route dashboard queries in the BFF
 
-```sql
--- Duff's roles get usage on the dedicated warehouse; krusty roles are unchanged.
-GRANT USAGE ON WAREHOUSE duff_wh TO ROLE tenant_duff_admin;
-GRANT USAGE ON WAREHOUSE duff_wh TO ROLE tenant_duff_viewer;
-
--- Set the service principal's default so non-API sessions also land on duff_wh.
-ALTER USER tenant_duff_svc SET DEFAULT_WAREHOUSE = duff_wh;
-```
-
-### 3. Modify the API to dynamically determine the warehouse
-
-`api/src/db.ts` sends every query to `SNOWFLAKE_WAREHOUSE`. It already derives
-the active role from the `scp` claim (e.g. `TENANT_DUFF_ADMIN`), which encodes
-the tenant. Map noisy tenants to their dedicated warehouse and fall back to the
-shared default:
+In `api/src/snowflake.ts`, look up the user's warehouse once and cache it briefly. Then pass it on each statement in
+place of the fixed `WAREHOUSE`:
 
 ```diff
- type RowType = { name: string; type: string };
- const coerce = (raw: string | null, t: string) =>
-   raw === null ? null : t === "fixed" || t === "real" ? Number(raw) : t === "boolean" ? raw === "true" : raw;
-
-+// Route noisy tenants to dedicated compute; everyone else shares SNOWFLAKE_WAREHOUSE.
-+// role is "TENANT_DUFF_ADMIN" -> tenant token "DUFF".
-+const DEDICATED_WAREHOUSES: Record<string, string> = { DUFF: "DUFF_WH" };
-+const warehouseFor = (role: string) =>
-+  DEDICATED_WAREHOUSES[role.split("_")[1]?.toUpperCase() ?? ""] ?? process.env.SNOWFLAKE_WAREHOUSE!;
-+
- export const query = async <T = Record<string, unknown>>(token: string, statement: string): Promise<T[]> => {
-   const role = String(decodeClaims(token).scp ?? "").replace(/^session:role:/, "");
-   const res = await fetch(`https://${process.env.SNOWFLAKE_HOST}/api/v2/statements`, {
-     method: "POST",
-     headers: {
-       Authorization: `Bearer ${token}`,
-       "X-Snowflake-Authorization-Token-Type": "OAUTH",
-       "Content-Type": "application/json",
-       Accept: "application/json",
-     },
-     body: JSON.stringify({
-       statement, timeout: 60, role,
--      warehouse: process.env.SNOWFLAKE_WAREHOUSE,
-+      warehouse: warehouseFor(role),
-       database: process.env.SNOWFLAKE_DATABASE,
-       schema: process.env.SNOWFLAKE_SCHEMA,
-     }),
++const compute = new Map<string, { wh: string; at: number }>();
++const warehouseFor = async (endUserId: string) => {
++  const hit = compute.get(endUserId);
++  if (hit && Date.now() - hit.at < 60_000) return hit.wh;
++  const [row] = await run<{ WAREHOUSE: string }>(endUserId, WAREHOUSE,
++    `SELECT warehouse AS "WAREHOUSE" FROM mtt_db.serving.my_compute`);
++  const wh = row?.WAREHOUSE ?? WAREHOUSE;
++  compute.set(endUserId, { wh, at: Date.now() });
++  return wh;
++};
 ```
+
+Here `run` is the existing body of `queryAs`, with the warehouse as a parameter. `queryAs` becomes
+`run(id, await warehouseFor(id), statement)`. The lookup runs under the same session attribute, so a user can only ever
+resolve their own tenant's warehouse.
+
+### 3. The agent
+
+The agent's SQL runs on the warehouse named in its specification (`execution_environment.warehouse` in
+`005_agent.sql`). I haven't verified whether `agent:run` lets you override the warehouse per request. Until you've
+confirmed that against the current Cortex Agents REST reference, isolate agent compute at the agent level:
+
+- Create `serving.sales_agent_duff` with the same spec but `warehouse: DUFF_WH`.
+- Have the BFF choose the agent name from the same `my_compute` lookup.
 
 ### Verify
 
-The BFF already selects `CURRENT_WAREHOUSE()` in its identity query, but the UI
-in `web/src/App.tsx` renders only user and role. Surface the warehouse to
-confirm per-user routing:
+Log in as each user and check the warehouse. Add `CURRENT_WAREHOUSE() AS "WAREHOUSE"` to the dashboard's identity
+query and show it on the identity card.
 
-```diff
-               <h3>Snowflake resolved</h3>
-               <p>
--                User <strong>{view.identity.USER}</strong>, role <strong>{view.identity.ROLE}</strong>.
-+                User <strong>{view.identity.USER}</strong>, role <strong>{view.identity.ROLE}</strong>,
-+                warehouse <strong>{view.identity.WAREHOUSE}</strong>.
-               </p>
-```
-
-Log in as each user:
-
-- **Barney** / **Moe** (Duff): warehouse reads `DUFF_WH`.
-- **Marge** / **Homer** (Krusty): warehouse reads `MTT_WH`.
-
-Duff's load now runs on isolated compute; the other tenants are unaffected.
+- **Barney** / **Moe** (Duff): `DUFF_WH`.
+- **Marge** / **Homer** (Krusty): `MTT_WH`.
 
 ### Clean up
 
-Drop the extra warehouse when tearing down. Add it to
-`data/teardown/teardown.sql`:
+Add the following to `data/teardown/teardown.sql` (dropping the database removes the table and view):
 
 ```diff
  DROP WAREHOUSE IF EXISTS mtt_wh;

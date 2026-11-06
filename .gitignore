@@ -1,5 +1,9 @@
 .env
-mtt/auth/clients.json
 mtt/auth/web.env
+mtt/keys/
+mtt/variations/per_tenant_roles/auth/clients.json
+mtt/variations/per_tenant_roles/auth/web.env
 opt/auth/clients.json
 opt/auth/web.env
+node_modules/
+dist/

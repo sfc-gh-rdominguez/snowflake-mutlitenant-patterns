@@ -1,10 +1,14 @@
-const KEYCLOAK = process.env.KEYCLOAK_URL!;
+// The browser is redirected to the public URL; the BFF calls the token
+// endpoint over the internal network.
+const PUBLIC = process.env.KEYCLOAK_PUBLIC_URL!;
+const INTERNAL = process.env.KEYCLOAK_INTERNAL_URL ?? PUBLIC;
 const REALM = process.env.REALM ?? "tenants";
 const CLIENT_ID = process.env.WEB_CLIENT_ID!;
 const CLIENT_SECRET = process.env.WEB_CLIENT_SECRET!;
 const BASE = process.env.APP_BASE_URL!;
 const REDIRECT_URI = `${BASE}/auth/callback`;
-const OIDC = `${KEYCLOAK}/realms/${REALM}/protocol/openid-connect`;
+const OIDC = `${PUBLIC}/realms/${REALM}/protocol/openid-connect`;
+const OIDC_INTERNAL = `${INTERNAL}/realms/${REALM}/protocol/openid-connect`;
 
 export type TokenSet = { access_token: string; refresh_token: string; id_token: string; expires_in: number };
 const b64url = (b: Uint8Array) => Buffer.from(b).toString("base64url");
@@ -20,7 +24,7 @@ export const authorizeUrl = (state: string, codeChallenge: string) =>
   });
 
 const tokenCall = async (body: Record<string, string>): Promise<TokenSet> => {
-  const res = await fetch(`${OIDC}/token`, {
+  const res = await fetch(`${OIDC_INTERNAL}/token`, {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, ...body }),
   });

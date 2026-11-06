@@ -54,7 +54,8 @@ new Elysia()
       const token = await store.freshToken(s);
       const claims = decodeClaims(token);
       const [identity] = await query(token,
-        `SELECT CURRENT_USER() AS "USER", CURRENT_ROLE() AS "ROLE", CURRENT_WAREHOUSE() AS "WAREHOUSE",`);
+        `SELECT CURRENT_USER() AS "USER", CURRENT_ROLE() AS "ROLE", CURRENT_WAREHOUSE() AS "WAREHOUSE",
+                CURRENT_DATABASE() AS "DATABASE"`);
       const regions = await query(token,
         `SELECT region AS "REGION", COUNT(*) AS "ORDERS", ROUND(SUM(amount),2) AS "REVENUE"
          FROM serving.sales GROUP BY region ORDER BY "ORDERS" DESC`);

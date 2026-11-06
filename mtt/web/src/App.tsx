@@ -4,6 +4,8 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
@@ -355,7 +357,10 @@ function AgentPanel({ onAsk }: { onAsk: () => void }) {
             <motion.div key={i} layout="position" className={`msg ${t.role === "user" ? "user" : "agent"}`}
                         initial={{ opacity: 0, y: 10, scale: 0.98 }} animate={t.failed ? shake : { opacity: 1, y: 0, scale: 1 }}
                         transition={{ duration: 0.22, ease: EASE }}>
-              {t.text && <div className="text">{t.text.trim()}</div>}
+              {t.text && (t.role === "user"
+                ? <div className="text">{t.text.trim()}</div>
+                // Agent replies are markdown. react-markdown skips raw HTML by default, so model output can't inject markup.
+                : <div className="md"><Markdown remarkPlugins={[remarkGfm]} components={{ a: ExternalLink }}>{t.text.trim()}</Markdown></div>)}
               <AnimatePresence>
                 {t.status && (
                   <motion.span className="status" variants={bead} {...presence}>
@@ -404,6 +409,8 @@ function AgentTableView({ t }: { t: AgentTable }) {
     </motion.table>
   );
 }
+
+const ExternalLink = (p: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...p} target="_blank" rel="noreferrer noopener" />;
 
 const Dots = () => (
   <span className="dots" aria-hidden>

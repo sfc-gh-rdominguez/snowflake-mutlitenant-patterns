@@ -13,7 +13,9 @@
     "motion": "^12",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^2.15.0"
+    "react-markdown": "^10",
+    "recharts": "^2.15.0",
+    "remark-gfm": "^4"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

@@ -1,5 +1,20 @@
 set dotenv-load := true
 
+# List recipes
+default:
+  @just --list
+
+# Preflight: local tools and Snowflake reachability
+doctor connection:
+  @rc=0; for t in docker jq snow curl; do command -v $t >/dev/null && echo "✓ $t" || { echo "✗ $t missing"; rc=1; }; done; exit $rc
+  @docker compose version >/dev/null 2>&1 && echo "✓ docker compose" || { echo "✗ docker compose missing"; exit 1; }
+  @docker info >/dev/null 2>&1 && echo "✓ docker running" || { echo "✗ docker not running (or Docker Desktop needs sign-in)"; exit 1; }
+  @snow sql -c {{connection}} -q "SELECT CURRENT_ACCOUNT()" >/dev/null 2>&1 && echo "✓ Snowflake reachable via '{{connection}}'" || { echo "✗ cannot reach Snowflake via '{{connection}}' (VPN? connection name?)"; exit 1; }
+
+# One shot: every step end to end, verifying as it goes (safe to re-run)
+up connection:
+  bash scripts/up.sh {{connection}}
+
 # Basic bootstrapping
 setup connection:
   snow sql -c {{connection}} -f data/migrations/001_init.sql
@@ -9,7 +24,7 @@ setup connection:
 # IdP-related bootstrapping
 idp-up:
   docker compose up -d keycloak ngrok
-  @echo "waiting for keycloak + tunnel..."; sleep 20
+  @echo "waiting for keycloak + tunnel..."; until curl -sf ${KEYCLOAK_PUBLIC_URL}/realms/master >/dev/null; do sleep 3; done; echo "✓ keycloak reachable through the tunnel"
 
 idp-seed:
   chmod +x auth/scripts/bootstrap.sh
@@ -26,6 +41,8 @@ idp-add-users:
 app-up:
   docker compose up -d --build api web
 
+# Remove everything: containers + volumes, and every Snowflake object
+[confirm("Drop OPT_ADMIN_DB, every tenant database/warehouse/role/user, the OAuth integration and all local containers? [y/N]")]
 teardown connection:
   docker compose down -v
   snow sql -c {{connection}} -f data/teardown/teardown.sql

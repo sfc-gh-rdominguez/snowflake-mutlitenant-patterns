@@ -89,6 +89,19 @@ Your domain serves the public URL of your IdP later, hence the key name in the `
 Also set `SNOWFLAKE_HOST` in the `.env` (e.g. `abcd-xy12345.snowflakecomputing.com`); the app containers use it to reach
 the Snowflake SQL API.
 
+### In a hurry? One step
+
+With `.env` filled in, this runs every step below in order, verifying as it goes, and stops at the first problem with
+the step that failed:
+
+```sh
+just up <connection>
+```
+
+It checks your tools, runs the migrations, starts Keycloak and the ngrok tunnel and waits until Snowflake can reach
+it, seeds the realm, creates the OAuth integration, adds the users, and starts the app. It's safe to re-run. Then skip
+to [step 6](#6-log-in). The steps below explain what it did.
+
 ### 2. Bootstrap
 
 With the `.env` in place, point the `setup` recipe at your Snow CLI connection - the same name you'd pass to

@@ -137,6 +137,20 @@ Set `SNOWFLAKE_ACCOUNT` (your account identifier, e.g. `MYORG-MYACCOUNT`) and `S
 policies), and Cortex Agents with `claude-sonnet-4-6`, either in your region or through cross-region inference. To use
 a different model, change `models.orchestration` in `005_agent.sql`.
 
+### In a hurry? One step
+
+With `.env` filled in, this runs every step below in order, verifying as it goes, and stops at the first problem with
+the step that failed:
+
+```sh
+just up <connection>
+```
+
+It checks your tools and that `SNOWFLAKE_ACCOUNT` matches the connection, runs the migrations, creates the key pair
+(or keeps an existing one) and confirms Snowflake has it, starts Keycloak and the app, then proves the app user can
+connect and that an unentitled user sees zero rows. It's safe to re-run, but re-running reseeds the entitlements, which
+undoes any `tenant-add`. Then skip to [step 5](#5-log-in). The steps below explain what it did.
+
 ### 2. Bootstrap
 
 ```sh

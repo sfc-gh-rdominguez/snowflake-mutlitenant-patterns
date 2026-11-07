@@ -47,8 +47,19 @@ export const assertEndUser = (id: string) => {
 
 type RowType = { name: string; type: string };
 type Result = { resultSetMetaData?: { rowType: RowType[] }; data?: (string | null)[][]; statementHandles?: string[] };
+// The SQL API sends dates as days since epoch and timestamps as "seconds.nanos"
+// (plus an offset for TZ); turn both into ISO strings so charts get real dates.
+const iso = (ms: number) => {
+  const s = new Date(ms).toISOString();
+  return s.endsWith("T00:00:00.000Z") ? s.slice(0, 10) : s;
+};
 const coerce = (raw: string | null, t: string) =>
-  raw === null ? null : t === "fixed" || t === "real" ? Number(raw) : t === "boolean" ? raw === "true" : raw;
+  raw === null ? null
+    : t === "fixed" || t === "real" ? Number(raw)
+    : t === "boolean" ? raw === "true"
+    : t === "date" ? iso(Number(raw) * 86_400_000)
+    : t.startsWith("timestamp") ? iso(Number(raw.split(" ")[0]) * 1000)
+    : raw;
 const rows = <T>(p: Result): T[] => {
   const rt = p.resultSetMetaData?.rowType ?? [];
   return (p.data ?? []).map((row) => {
@@ -93,5 +104,28 @@ export const runAgent = (endUserId: string, messages: unknown[]) =>
       },
     }),
   });
+
+// Same no-binding constraint as above: quote arbitrary text as a Snowflake
+// string literal. Escaping \ and ' leaves nothing that can end the literal.
+export const lit = (s: string) => `'${s.replace(/\\/g, "\\\\").replace(/'/g, "''")}'`;
+
+// Cortex Analyst only writes SQL here; it doesn't run it. We run it later with
+// queryAs, so the policies see the real end user.
+export const analystSql = async (question: string): Promise<{ sql?: string; text: string }> => {
+  const res = await fetch(`https://${HOST}/api/v2/cortex/analyst/message`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      messages: [{ role: "user", content: [{ type: "text", text: question }] }],
+      semantic_view: `${DATABASE}.${SCHEMA}.SALES_SV`,
+    }),
+  });
+  if (!res.ok) throw new Error(`Analyst ${res.status}: ${await res.text()}`);
+  const content: { type: string; text?: string; statement?: string }[] = (await res.json())?.message?.content ?? [];
+  return {
+    sql: content.find((c) => c.type === "sql")?.statement,
+    text: content.filter((c) => c.type === "text").map((c) => c.text).join("\n"),
+  };
+};
 
 export const whoami = () => ({ account: ACCOUNT, user: USER, role: ROLE });

@@ -6,6 +6,13 @@ server {
     proxy_pass ${API_URL}; proxy_set_header Host $host;
     proxy_buffering off; proxy_cache off; proxy_read_timeout 300s;
   }
+  # Report phases stream as they happen (AI_COMPLETE, Cortex Analyst, the queries).
+  # No trailing slash: "/api/reports/" would 301 POST /api/reports, and browsers
+  # follow a 301 as a GET, which silently turns "save" into "list".
+  location /api/reports {
+    proxy_pass ${API_URL}; proxy_set_header Host $host;
+    proxy_buffering off; proxy_cache off; proxy_read_timeout 300s;
+  }
   location /api/  { proxy_pass ${API_URL}; proxy_set_header Host $host; }
   location /auth/ { proxy_pass ${API_URL}; proxy_set_header Host $host; }
   location /      { root /usr/share/nginx/html; try_files $uri /index.html; }

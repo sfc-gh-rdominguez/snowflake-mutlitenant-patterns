@@ -22,6 +22,7 @@ setup connection:
   snow sql -c {{connection}} -f data/migrations/003_data.sql
   snow sql -c {{connection}} -f data/migrations/004_app.sql
   snow sql -c {{connection}} -f data/migrations/005_agent.sql
+  snow sql -c {{connection}} -f data/migrations/006_reports.sql
 
 # Generate the app user's key pair locally (keys/ is gitignored)
 keypair:

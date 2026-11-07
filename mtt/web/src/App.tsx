@@ -10,6 +10,8 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { bead, button as landing, EASE, nod, pop, presence, rise, shake, stage } from "./motion";
+import { Reports } from "./Reports";
+import { readSSE } from "./sse";
 import { Tour, tourSeen, type Step } from "./Tour";
 import { Card, Cmd, CTP, SHADES, SignIn, Stat, Swap, Title, Toast, tooltip } from "./ui";
 
@@ -226,6 +228,7 @@ function Dashboard({ onAsk }: { onAsk: () => void }) {
         </motion.main>
         <AgentPanel onAsk={onAsk} />
       </div>
+      {d && !empty && <motion.section className="grid reports-row" variants={stage(0.1, 0)}><Reports user={d.user} /></motion.section>}
 
       <motion.footer variants={pop}>
         <span className="muted"><KeyRound size={12} /> Key-pair auth as {d?.snowflake.user ?? "…"} · account {d?.snowflake.account ?? "…"}</span>
@@ -421,28 +424,6 @@ const Dots = () => (
 );
 
 const isNum = (v: string | null) => v !== null && v !== "" && !isNaN(Number(v));
-
-// Minimal SSE reader over fetch (EventSource can't POST).
-async function readSSE(body: ReadableStream<Uint8Array>, on: (event: string, data: any) => void) {
-  const reader = body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf("\n\n")) >= 0) {
-      const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
-      let event = "message", data = "";
-      for (const line of chunk.split("\n")) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        else if (line.startsWith("data:")) data += line.slice(5).trim();
-      }
-      try { on(event, data ? JSON.parse(data) : {}); } catch { /* ignore partial/non-JSON */ }
-    }
-  }
-}
 
 const findSql = (o: any): string | undefined => {
   if (!o || typeof o !== "object") return;
